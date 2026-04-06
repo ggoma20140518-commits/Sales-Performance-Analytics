@@ -506,282 +506,299 @@ def _add_table_to_slide(slide, headers, rows, left, top, width, height):
 
 
 def generate_pptx(data, metric):
-    """PPT 보고서 생성 (COSMAX 양식 기반) -> bytes 반환"""
-    chart_files = []
+    """PPT 보고서 생성 (네이티브 차트 - PPT에서 편집 가능) -> bytes 반환"""
+    from pptx.chart.data import CategoryChartData
     template_path = os.path.join(os.path.dirname(__file__), "2026년 사업계획 양식.pptx")
 
-    try:
-        # 템플릿 로드 (있으면 양식 사용, 없으면 빈 프레젠테이션)
-        if os.path.exists(template_path):
-            prs = Presentation(template_path)
-            # 기존 슬라이드 제거 (양식의 레이아웃만 사용)
-            while len(prs.slides) > 0:
-                rId = prs.slides._sldIdLst[0].rId
-                prs.part.drop_rel(rId)
-                del prs.slides._sldIdLst[0]
-        else:
-            prs = Presentation()
-            prs.slide_width = Emu(12192000)
-            prs.slide_height = Emu(6858000)
+    # 템플릿 로드
+    if os.path.exists(template_path):
+        prs = Presentation(template_path)
+        while len(prs.slides) > 0:
+            rId = prs.slides._sldIdLst[0].rId
+            prs.part.drop_rel(rId)
+            del prs.slides._sldIdLst[0]
+    else:
+        prs = Presentation()
+        prs.slide_width = Emu(12192000)
+        prs.slide_height = Emu(6858000)
 
-        # 레이아웃 선택
-        cover_layout = None
-        content_layout = None
-        end_layout = None
-        for layout in prs.slide_layouts:
-            name = layout.name.lower()
-            if "표지" in name or "title" in name.lower():
-                cover_layout = layout
-            elif "end" in name:
-                end_layout = layout
-            else:
-                content_layout = layout
-        if content_layout is None:
-            content_layout = prs.slide_layouts[6]  # blank fallback
-        if cover_layout is None:
-            cover_layout = content_layout
+    content_layout = prs.slide_layouts[6]  # 빈 화면
+    cover_layout = end_layout = None
+    for layout in prs.slide_layouts:
+        if "표지" in layout.name or "Title" in layout.name:
+            cover_layout = layout
+        elif "End" in layout.name or "end" in layout.name:
+            end_layout = layout
+    if cover_layout is None:
+        cover_layout = content_layout
 
-        months = sorted(data["년월"].unique())
-        period = f"{months[0]} ~ {months[-1]}" if len(months) > 1 else months[0]
-        today = datetime.date.today().strftime("%Y.%m.%d")
+    months = sorted(data["년월"].unique())
+    period = f"{months[0]} ~ {months[-1]}" if len(months) > 1 else months[0]
+    today = datetime.date.today().strftime("%Y.%m.%d")
 
-        # ── 헬퍼: 컨텐츠 슬라이드 생성 ──
-        def _new_slide(title_text):
-            s = prs.slides.add_slide(content_layout)
-            # 기존 placeholder 텍스트 정리
-            for shape in s.shapes:
-                if shape.has_text_frame:
-                    for p in shape.text_frame.paragraphs:
-                        for r in p.runs:
-                            r.text = ""
-            # 구분선
-            from pptx.util import Emu as _Emu
-            line = s.shapes.add_connector(1, Emu(347134), Emu(745066), Emu(11709400), Emu(745066))
-            line.line.color.rgb = RGBColor(0, 0, 0)
-            line.line.width = Pt(0.5)
-            # 제목
-            tx = s.shapes.add_textbox(Emu(399560), Emu(254430), Emu(8000000), Emu(400110))
-            p = tx.text_frame.paragraphs[0]
-            p.text = title_text
-            p.font.size = Pt(20)
-            p.font.bold = True
-            p.font.color.rgb = RGBColor(0, 0, 0)
-            # Lab 표시
-            tag = s.shapes.add_shape(1, Emu(10315094), Emu(397263), Emu(1409700), Emu(323850))
-            tag.fill.solid()
-            tag.fill.fore_color.rgb = RGBColor(0, 112, 192)
-            tag.line.fill.background()
-            tp = tag.text_frame.paragraphs[0]
-            tp.text = "R&I"
-            tp.font.size = Pt(12)
-            tp.font.bold = True
-            tp.font.color.rgb = WHITE
-            tp.alignment = PP_ALIGN.CENTER
-            return s
+    def _new_slide(title_text):
+        s = prs.slides.add_slide(content_layout)
+        s.background.fill.solid()
+        s.background.fill.fore_color.rgb = RGBColor(255, 255, 255)
+        ln = s.shapes.add_connector(1, Emu(347134), Emu(745066), Emu(11709400), Emu(745066))
+        ln.line.color.rgb = RGBColor(200, 200, 200)
+        ln.line.width = Pt(0.75)
+        tx = s.shapes.add_textbox(Emu(399560), Emu(254430), Emu(8000000), Emu(400110))
+        p = tx.text_frame.paragraphs[0]
+        p.text = title_text
+        p.font.size = Pt(20)
+        p.font.bold = True
+        p.font.color.rgb = RGBColor(0, 0, 0)
+        tag = s.shapes.add_shape(1, Emu(10315094), Emu(397263), Emu(1409700), Emu(323850))
+        tag.fill.solid()
+        tag.fill.fore_color.rgb = RGBColor(0, 112, 192)
+        tag.line.fill.background()
+        tp = tag.text_frame.paragraphs[0]
+        tp.text = "R&I"
+        tp.font.size = Pt(12)
+        tp.font.bold = True
+        tp.font.color.rgb = WHITE
+        tp.alignment = PP_ALIGN.CENTER
+        return s
 
-        # ── 슬라이드 1: 표지 ──
-        slide = prs.slides.add_slide(cover_layout)
-        # 기존 placeholder 텍스트 업데이트
-        for shape in slide.shapes:
-            if shape.has_text_frame:
-                full_text = shape.text_frame.text
-                if "20XX" in full_text or "XX Lab" in full_text:
-                    for p in shape.text_frame.paragraphs:
-                        for r in p.runs:
-                            if "20XX" in r.text:
-                                r.text = today
-                            elif "XX Lab" in r.text:
-                                r.text = "ES Lab"
-                elif "COSMAX" in full_text or "매출" in full_text:
-                    for p in shape.text_frame.paragraphs:
-                        for r in p.runs:
-                            if "COSMAX" in r.text:
-                                r.text = "COSMAX R&I"
-                            elif "매출" in r.text:
-                                r.text = f"매출 분석 자료 ({period})"
+    def _add_bar(slide, labels, values, title, left, top, width, height, color_hex="0070C0"):
+        cd = CategoryChartData()
+        cd.categories = labels
+        cd.add_series("매출(억원)", [v / 1e8 for v in values])
+        cf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, left, top, width, height, cd)
+        ch = cf.chart
+        ch.has_legend = False
+        ch.chart_title.has_text_frame = True
+        ch.chart_title.text_frame.paragraphs[0].text = title
+        ch.chart_title.text_frame.paragraphs[0].font.size = Pt(11)
+        ch.chart_title.text_frame.paragraphs[0].font.bold = True
+        pl = ch.plots[0]
+        pl.gap_width = 80
+        sr = pl.series[0]
+        sr.format.fill.solid()
+        sr.format.fill.fore_color.rgb = RGBColor.from_string(color_hex)
+        sr.data_labels.show_value = True
+        sr.data_labels.font.size = Pt(7)
+        sr.data_labels.number_format = '#,##0.0'
 
-        # ── 슬라이드 2: 목차 ──
-        slide = _new_slide("목 차")
-        toc_items = [
-            "I. 실적 현황 요약",
-            "II. 고객사별 매출 분석",
-            "III. 품목(유형)별 매출 분석",
-            "IV. 국내/해외 매출 분석",
-            "V. 담당자별 매출 분석",
-            "VI. 키워드 트렌드 분석",
-        ]
-        for idx, item in enumerate(toc_items):
-            tx = slide.shapes.add_textbox(Emu(1468487), Emu(1100000 + idx * 650000), Emu(6000000), Emu(400110))
-            p = tx.text_frame.paragraphs[0]
-            p.text = item
-            p.font.size = Pt(18)
-            p.font.bold = True
-            p.font.color.rgb = RGBColor(0, 0, 0)
+    def _add_line(slide, pivot_df, title, left, top, width, height):
+        cd = CategoryChartData()
+        cd.categories = pivot_df.index.tolist()
+        for col in pivot_df.columns:
+            cd.add_series(str(col), [v / 1e8 for v in pivot_df[col].values])
+        cf = slide.shapes.add_chart(XL_CHART_TYPE.LINE_MARKERS, left, top, width, height, cd)
+        ch = cf.chart
+        ch.has_legend = True
+        ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+        ch.legend.font.size = Pt(7)
+        ch.chart_title.has_text_frame = True
+        ch.chart_title.text_frame.paragraphs[0].text = title
+        ch.chart_title.text_frame.paragraphs[0].font.size = Pt(11)
+        for s in ch.plots[0].series:
+            s.data_labels.show_value = True
+            s.data_labels.font.size = Pt(6)
+            s.data_labels.number_format = '#,##0.0'
 
-        # ── 슬라이드 3: 실적 현황 요약 ──
-        slide = _new_slide("I. 실적 현황 요약")
+    def _add_pie(slide, labels, values, title, left, top, width, height):
+        cd = CategoryChartData()
+        cd.categories = labels
+        cd.add_series("매출", [v / 1e8 for v in values])
+        cf = slide.shapes.add_chart(XL_CHART_TYPE.PIE, left, top, width, height, cd)
+        ch = cf.chart
+        ch.has_legend = True
+        ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+        ch.legend.font.size = Pt(8)
+        ch.chart_title.has_text_frame = True
+        ch.chart_title.text_frame.paragraphs[0].text = title
+        ch.chart_title.text_frame.paragraphs[0].font.size = Pt(11)
+        ch.plots[0].series[0].data_labels.show_percentage = True
+        ch.plots[0].series[0].data_labels.font.size = Pt(8)
 
-        total = data[metric].sum()
-        dom_total = data[data["국내/해외"] == "국내"][metric].sum()
-        ovs_total = data[data["국내/해외"] == "해외"][metric].sum()
-        n_cust = data["고객코드"].nunique()
-        n_prod = data["상품코드"].nunique()
+    def _add_grouped_bar(slide, pivot_df, title, left, top, width, height, colors=None):
+        cd = CategoryChartData()
+        cd.categories = pivot_df.index.tolist()
+        for col in pivot_df.columns:
+            cd.add_series(str(col), [v / 1e8 for v in pivot_df[col].values])
+        cf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, left, top, width, height, cd)
+        ch = cf.chart
+        ch.has_legend = True
+        ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+        ch.chart_title.has_text_frame = True
+        ch.chart_title.text_frame.paragraphs[0].text = title
+        ch.chart_title.text_frame.paragraphs[0].font.size = Pt(11)
+        if colors:
+            for i, s in enumerate(ch.plots[0].series):
+                if i < len(colors):
+                    s.format.fill.solid()
+                    s.format.fill.fore_color.rgb = RGBColor.from_string(colors[i])
 
-        summary_headers = ["구분", "금액(억원)", "비중"]
-        summary_rows = [
-            ["총 매출", f"{total/1e8:,.1f}", "100.0%"],
-            ["국내 매출", f"{dom_total/1e8:,.1f}", f"{dom_total/total*100:.1f}%" if total else "0%"],
-            ["해외 매출", f"{ovs_total/1e8:,.1f}", f"{ovs_total/total*100:.1f}%" if total else "0%"],
-            ["고객사 수", f"{n_cust}개", "-"],
-            ["상품 수", f"{n_prod}개", "-"],
-        ]
-        _add_table_to_slide(slide, summary_headers, summary_rows,
-                            Inches(0.5), Inches(1.0), Inches(5), Inches(2.2))
+    # 슬라이드 1: 표지
+    slide = prs.slides.add_slide(cover_layout)
+    for shape in slide.shapes:
+        if shape.is_placeholder:
+            idx = shape.placeholder_format.idx
+            if idx == 11:
+                for p in shape.text_frame.paragraphs:
+                    for r in p.runs:
+                        if "20XX" in r.text: r.text = today
+                        elif "Lab" in r.text: r.text = "ES Lab"
+            elif idx == 12:
+                for p in shape.text_frame.paragraphs:
+                    for r in p.runs:
+                        if "COSMAX" in r.text: r.text = "COSMAX R&I"
+                        elif "매출" in r.text: r.text = f"매출 분석 자료 ({period})"
 
-        # Team별 요약
-        team_sum = data.groupby("Team")[metric].sum().sort_values(ascending=False).reset_index()
-        team_rows = [[r["Team"], f"{r[metric]/1e8:,.1f}",
-                       f"{r[metric]/total*100:.1f}%" if total else "0%"]
-                      for _, r in team_sum.iterrows()]
-        _add_table_to_slide(slide, ["Team", "매출(억원)", "비중"], team_rows,
-                            Inches(6.5), Inches(1.0), Inches(5), Inches(1.5))
+    # 슬라이드 2: 목차
+    slide = _new_slide("목 차")
+    for idx, item in enumerate(["I. 실적 현황 요약", "II. 고객사별 매출 분석", "III. 품목(유형)별 매출 분석",
+                                 "IV. 국내/해외 매출 분석", "V. 담당자별 매출 분석", "VI. 키워드 트렌드 분석"]):
+        tx = slide.shapes.add_textbox(Emu(1468487), Emu(1100000 + idx * 650000), Emu(6000000), Emu(400110))
+        p = tx.text_frame.paragraphs[0]
+        p.text = item
+        p.font.size = Pt(18)
+        p.font.bold = True
 
-        # ── 슬라이드 4: 고객사별 매출 순위 ──
-        slide = _new_slide("II. 고객사별 매출 순위 (Top 20)")
-        cust = data.groupby("고객사명")[metric].sum().sort_values(ascending=False).head(20)
-        path = _make_bar_chart(cust.index.tolist(), cust.values.tolist(), "고객사별 매출 Top 20")
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(300000), Emu(1100000), Emu(7800000), Emu(3800000))
-        cust_tbl = data.groupby(["고객사명", "고객코드"]).agg(
-            매출합계=(metric, "sum"), 상품수=("상품코드", "nunique")
-        ).sort_values("매출합계", ascending=False).head(10).reset_index()
-        tbl_rows = [[i+1, r["고객사명"][:8], f"{r['매출합계']/1e8:,.1f}", r["상품수"]]
-                     for i, (_, r) in enumerate(cust_tbl.iterrows())]
-        _add_table_to_slide(slide, ["#", "고객사", "매출(억)", "상품수"], tbl_rows,
-                            Emu(8300000), Emu(1100000), Emu(3600000), Emu(3800000))
+    # 슬라이드 3: 실적 현황 요약
+    slide = _new_slide("I. 실적 현황 요약")
+    total = data[metric].sum()
+    dom_total = data[data["국내/해외"] == "국내"][metric].sum()
+    ovs_total = data[data["국내/해외"] == "해외"][metric].sum()
+    _add_table_to_slide(slide, ["구분", "금액(억원)", "비중"], [
+        ["총 매출", f"{total/1e8:,.1f}", "100.0%"],
+        ["국내 매출", f"{dom_total/1e8:,.1f}", f"{dom_total/total*100:.1f}%" if total else "0%"],
+        ["해외 매출", f"{ovs_total/1e8:,.1f}", f"{ovs_total/total*100:.1f}%" if total else "0%"],
+        ["고객사 수", f"{data['고객코드'].nunique()}개", "-"],
+        ["상품 수", f"{data['상품코드'].nunique()}개", "-"],
+    ], Inches(0.5), Inches(1.0), Inches(5), Inches(2.2))
+    team_sum = data.groupby("Team")[metric].sum().sort_values(ascending=False).reset_index()
+    _add_table_to_slide(slide, ["Team", "매출(억원)", "비중"],
+        [[r["Team"], f"{r[metric]/1e8:,.1f}", f"{r[metric]/total*100:.1f}%" if total else "0%"] for _, r in team_sum.iterrows()],
+        Inches(6.5), Inches(1.0), Inches(5), Inches(1.5))
 
-        # ── 슬라이드 5: 고객사별 월별 추이 ──
-        slide = _new_slide("II-1. 고객사별 월별 매출 추이 (Top 10)")
-        top10_cust = data.groupby("고객사명")[metric].sum().sort_values(ascending=False).head(10).index
-        pivot_cust = data[data["고객사명"].isin(top10_cust)].pivot_table(
-            index="년월", columns="고객사명", values=metric, aggfunc="sum"
-        ).fillna(0)
-        pivot_cust = pivot_cust[top10_cust]
-        path = _make_line_chart(pivot_cust, "고객사별 월별 매출 추이 (Top 10)", figsize=(12, 5))
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(300000), Emu(1100000), Emu(11500000), Emu(5200000))
+    # 슬라이드 3-1: 실적 현황표
+    slide = _new_slide("I-1. 고객사별 실적 현황표")
+    _ms = sorted(data["년월"].unique())
+    _pv = data.pivot_table(index="고객사명", columns="년월", values=metric, aggfunc="sum").fillna(0)
+    _pv = _pv.reindex(columns=_ms, fill_value=0)
+    _pv["누적"] = _pv.sum(axis=1)
+    _pv["제품수"] = data.groupby("고객사명")["상품코드"].nunique()
+    _pv = _pv.sort_values("누적", ascending=False).head(20)
+    _gt = _pv["누적"].sum()
+    th = ["분류"]
+    for i, m in enumerate(_ms):
+        th.append(metric)
+        if i > 0: th.extend(["증감", "성장률"])
+    th.extend(["누적", "비중", "순위", "제품수"])
+    tr0 = ["총합계"]
+    for i, m in enumerate(_ms):
+        v = data[data["년월"] == m][metric].sum()
+        tr0.append(f"{v/1e8:,.1f}억")
+        if i > 0:
+            pv = data[data["년월"] == _ms[i-1]][metric].sum()
+            d = v - pv; rt = (d/pv*100) if pv else 0; a = "▲" if d >= 0 else "▼"
+            tr0.append(f"{a} {abs(d)/1e8:,.1f}억"); tr0.append(f"{a} {abs(rt):.1f}%")
+    tr0.extend([f"{_gt/1e8:,.1f}억", "100%", "-", str(data["상품코드"].nunique())])
+    trs = [tr0]
+    for rk, (nm, rw) in enumerate(_pv.iterrows(), 1):
+        r = [nm]
+        for i, m in enumerate(_ms):
+            v = rw[m]; r.append(f"{v/1e8:,.1f}억")
+            if i > 0:
+                pv = rw[_ms[i-1]]; d = v-pv; rt = (d/pv*100) if pv else 0; a = "▲" if d >= 0 else "▼"
+                r.append(f"{a} {abs(d)/1e8:,.1f}억"); r.append(f"{a} {abs(rt):.1f}%")
+        cm = rw["누적"]
+        r.extend([f"{cm/1e8:,.1f}억", f"{cm/_gt*100:.1f}%" if _gt else "0%", str(rk), str(int(rw["제품수"]))])
+        trs.append(r)
+    _add_table_to_slide(slide, th, trs, Emu(200000), Emu(1000000), Emu(11700000), Emu(min(len(trs)*200000+300000, 5500000)))
 
-        # ── 슬라이드 6: 품목별 분석 ──
-        slide = _new_slide("III. 품목(유형)별 매출 분석")
-        type_sales = data.groupby("중유형")[metric].sum().sort_values(ascending=False)
-        path = _make_bar_chart(type_sales.index.tolist(), type_sales.values.tolist(),
-                               "중유형별 매출", color="#0070C0", figsize=(6, 4))
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(300000), Emu(1100000), Emu(5700000), Emu(2900000))
-        subtype_sales = data.groupby("소유형")[metric].sum().sort_values(ascending=False).head(12)
-        path = _make_bar_chart(subtype_sales.index.tolist(), subtype_sales.values.tolist(),
-                               "소유형별 매출 Top 12", color="#374151", figsize=(6, 4))
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(6200000), Emu(1100000), Emu(5700000), Emu(2900000))
-        cat_sales = data.groupby("19년 카테고리")[metric].sum().sort_values(ascending=False)
-        path = _make_pie_chart(cat_sales.index.tolist(), cat_sales.values.tolist(),
-                               "카테고리별 매출 비중", figsize=(6, 3.5))
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(3200000), Emu(4100000), Emu(5500000), Emu(2600000))
+    # 슬라이드 4: 고객사별 매출 순위
+    slide = _new_slide("II. 고객사별 매출 순위 (Top 20)")
+    cust = data.groupby("고객사명")[metric].sum().sort_values(ascending=False).head(20)
+    _add_bar(slide, cust.index.tolist(), cust.values.tolist(), "고객사별 매출 Top 20 (억원)",
+             Emu(300000), Emu(1100000), Emu(7800000), Emu(3800000))
+    cust_tbl = data.groupby(["고객사명", "고객코드"]).agg(
+        매출합계=(metric, "sum"), 상품수=("상품코드", "nunique")
+    ).sort_values("매출합계", ascending=False).head(10).reset_index()
+    _add_table_to_slide(slide, ["#", "고객사", "매출(억)", "상품수"],
+        [[i+1, r["고객사명"][:8], f"{r['매출합계']/1e8:,.1f}", r["상품수"]] for i, (_, r) in enumerate(cust_tbl.iterrows())],
+        Emu(8300000), Emu(1100000), Emu(3600000), Emu(3800000))
 
-        # ── 슬라이드 7: 국내/해외 분석 ──
-        slide = _new_slide("IV. 국내/해외 매출 분석")
-        reg = data.groupby("국내/해외")[metric].sum()
-        path = _make_pie_chart(reg.index.tolist(), reg.values.tolist(),
-                               "국내 vs 해외 매출 비중", figsize=(5, 4))
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(300000), Emu(1100000), Emu(4200000), Emu(3200000))
-        region_type = data.groupby(["국내/해외", "중유형"])[metric].sum().reset_index()
-        pivot_rt = region_type.pivot_table(index="중유형", columns="국내/해외", values=metric, aggfunc="sum").fillna(0)
-        fig, ax = plt.subplots(figsize=(6, 4))
-        x = range(len(pivot_rt.index))
-        w = 0.35
-        if "국내" in pivot_rt.columns:
-            ax.bar([i - w/2 for i in x], pivot_rt["국내"]/1e8, w, label="국내", color="#0070C0")
-        if "해외" in pivot_rt.columns:
-            ax.bar([i + w/2 for i in x], pivot_rt["해외"]/1e8, w, label="해외", color="#E61E3D")
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(pivot_rt.index, rotation=45, ha="right", fontsize=8)
-        ax.set_title("국내/해외별 중유형 매출 비교", fontsize=12, fontweight="bold")
-        ax.set_ylabel("매출(억원)", fontsize=9)
-        ax.legend(fontsize=9)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        plt.tight_layout()
-        path = _save_chart(fig)
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(4800000), Emu(1100000), Emu(5100000), Emu(3200000))
+    # 슬라이드 5: 고객사별 월별 추이
+    slide = _new_slide("II-1. 고객사별 월별 매출 추이 (Top 10)")
+    top10 = data.groupby("고객사명")[metric].sum().sort_values(ascending=False).head(10).index
+    pv = data[data["고객사명"].isin(top10)].pivot_table(index="년월", columns="고객사명", values=metric, aggfunc="sum").fillna(0)
+    pv = pv[top10]
+    _add_line(slide, pv, "고객사별 월별 매출 추이 (억원)", Emu(300000), Emu(1100000), Emu(11500000), Emu(5200000))
 
-        # ── 슬라이드 8: 국내/해외 Top10 ──
-        slide = _new_slide("IV-1. 국내/해외 고객사 매출 Top 10")
-        for idx, (region_name, clr) in enumerate([("국내", "#0070C0"), ("해외", "#E61E3D")]):
-            rdata = data[data["국내/해외"] == region_name]
-            if len(rdata) == 0:
-                continue
-            rc = rdata.groupby("고객사명")[metric].sum().sort_values(ascending=False).head(10)
-            path = _make_bar_chart(rc.index.tolist(), rc.values.tolist(),
-                                   f"{region_name} 고객사 매출 Top 10", color=clr, figsize=(6, 4))
-            chart_files.append(path)
-            x_pos = Emu(300000) if idx == 0 else Emu(6200000)
-            slide.shapes.add_picture(path, x_pos, Emu(1100000), Emu(5700000), Emu(5000000))
+    # 슬라이드 6: 품목별
+    slide = _new_slide("III. 품목(유형)별 매출 분석")
+    ts = data.groupby("중유형")[metric].sum().sort_values(ascending=False)
+    _add_bar(slide, ts.index.tolist(), ts.values.tolist(), "중유형별 매출 (억원)",
+             Emu(300000), Emu(1100000), Emu(5700000), Emu(2900000))
+    ss = data.groupby("소유형")[metric].sum().sort_values(ascending=False).head(12)
+    _add_bar(slide, ss.index.tolist(), ss.values.tolist(), "소유형별 매출 Top 12 (억원)",
+             Emu(6200000), Emu(1100000), Emu(5700000), Emu(2900000), "374151")
+    cs = data.groupby("19년 카테고리")[metric].sum().sort_values(ascending=False)
+    _add_pie(slide, cs.index.tolist(), cs.values.tolist(), "카테고리별 매출 비중",
+             Emu(3200000), Emu(4100000), Emu(5500000), Emu(2600000))
 
-        # ── 슬라이드 9: 담당자별 분석 ──
-        slide = _new_slide("V. 담당자별 매출 실적")
-        mgr = data.groupby(["현담당자", "현담당자 팀"]).agg(
-            매출합계=(metric, "sum"), 담당제품수=("상품코드", "nunique"), 담당고객수=("고객코드", "nunique")
-        ).sort_values("매출합계", ascending=False).reset_index()
-        path = _make_bar_chart(mgr["현담당자"].tolist(), mgr["매출합계"].tolist(),
-                               "담당자별 매출 순위", color="#0070C0", figsize=(8, 4))
-        chart_files.append(path)
-        slide.shapes.add_picture(path, Emu(300000), Emu(1100000), Emu(7000000), Emu(3200000))
-        mgr_rows = [[i+1, r["현담당자"], r["현담당자 팀"], f"{r['매출합계']/1e8:,.1f}",
-                      r["담당제품수"], r["담당고객수"]]
-                     for i, (_, r) in enumerate(mgr.iterrows())]
-        _add_table_to_slide(slide, ["#", "담당자", "팀", "매출(억)", "제품수", "고객수"],
-                            mgr_rows,
-                            Emu(7500000), Emu(1100000), Emu(4400000), Emu(min(len(mgr_rows)*180000 + 300000, 5000000)))
+    # 슬라이드 7: 국내/해외
+    slide = _new_slide("IV. 국내/해외 매출 분석")
+    rg = data.groupby("국내/해외")[metric].sum()
+    _add_pie(slide, rg.index.tolist(), rg.values.tolist(), "국내 vs 해외 매출 비중",
+             Emu(300000), Emu(1100000), Emu(4200000), Emu(3200000))
+    rt = data.groupby(["국내/해외", "중유형"])[metric].sum().reset_index()
+    pvt = rt.pivot_table(index="중유형", columns="국내/해외", values=metric, aggfunc="sum").fillna(0)
+    _add_grouped_bar(slide, pvt, "국내/해외별 중유형 비교 (억원)",
+                     Emu(4800000), Emu(1100000), Emu(5100000), Emu(3200000), colors=["0070C0", "E61E3D"])
 
-        # ── 슬라이드 10: 키워드 분석 ──
-        slide = _new_slide("VI. 제품명 키워드 트렌드 분석")
-        # 키워드 추출 (간략 버전)
-        _KW = ["미백","브라이트","잡티","주름","탄력","리프트","보습","수분","히알루론",
-               "진정","시카","카밍","각질","필링","모공","비타민","비타","레티놀",
-               "콜라겐","펩타이드","세라마이드","프로폴리스","병풀","마데카",
-               "앰플","세럼","에센스","토너","크림","마스크","패드","미스트"]
-        kw_records = []
-        for _, row in data.iterrows():
-            nm = str(row["상품명"]).upper()
-            for kw in _KW:
-                if kw.upper() in nm:
-                    kw_records.append({"키워드": kw, metric: row[metric]})
-        if kw_records:
-            kw_agg = pd.DataFrame(kw_records).groupby("키워드")[metric].sum().sort_values(ascending=False).head(10)
-            path = _make_bar_chart(kw_agg.index.tolist(), kw_agg.values.tolist(),
-                                   "제품명 키워드 매출 Top 10", color="#0070C0", figsize=(10, 4.5))
-            chart_files.append(path)
-            slide.shapes.add_picture(path, Emu(300000), Emu(1100000), Emu(11500000), Emu(5200000))
+    # 슬라이드 8: 국내/해외 Top10
+    slide = _new_slide("IV-1. 국내/해외 고객사 매출 Top 10")
+    for idx, (rn, clr) in enumerate([("국내", "0070C0"), ("해외", "E61E3D")]):
+        rd = data[data["국내/해외"] == rn]
+        if len(rd) == 0: continue
+        rc = rd.groupby("고객사명")[metric].sum().sort_values(ascending=False).head(10)
+        xp = Emu(300000) if idx == 0 else Emu(6200000)
+        _add_bar(slide, rc.index.tolist(), rc.values.tolist(), f"{rn} 고객사 Top 10 (억원)",
+                 xp, Emu(1100000), Emu(5700000), Emu(5000000), clr)
 
-        # ── 마지막 슬라이드: 엔딩 ──
-        if end_layout:
-            prs.slides.add_slide(end_layout)
+    # 슬라이드 9: 담당자별
+    slide = _new_slide("V. 담당자별 매출 실적")
+    mg = data.groupby(["현담당자", "현담당자 팀"]).agg(
+        매출합계=(metric, "sum"), 담당제품수=("상품코드", "nunique"), 담당고객수=("고객코드", "nunique")
+    ).sort_values("매출합계", ascending=False).reset_index()
+    _add_bar(slide, mg["현담당자"].tolist(), mg["매출합계"].tolist(), "담당자별 매출 순위 (억원)",
+             Emu(300000), Emu(1100000), Emu(7000000), Emu(3200000))
+    _add_table_to_slide(slide, ["#", "담당자", "팀", "매출(억)", "제품수", "고객수"],
+        [[i+1, r["현담당자"], r["현담당자 팀"], f"{r['매출합계']/1e8:,.1f}", r["담당제품수"], r["담당고객수"]]
+         for i, (_, r) in enumerate(mg.iterrows())],
+        Emu(7500000), Emu(1100000), Emu(4400000), Emu(min(len(mg)*180000+300000, 5000000)))
 
-        # ── Output ──
-        buf = io.BytesIO()
-        prs.save(buf)
-        buf.seek(0)
-        return buf.getvalue()
-    finally:
-        for f in chart_files:
-            try:
-                os.unlink(f)
-            except OSError:
-                pass
+    # 슬라이드 10: 키워드
+    slide = _new_slide("VI. 제품명 키워드 트렌드 분석")
+    _KW = ["미백","브라이트","잡티","주름","탄력","리프트","보습","수분","히알루론",
+           "진정","시카","카밍","각질","필링","모공","비타민","비타","레티놀",
+           "콜라겐","펩타이드","세라마이드","프로폴리스","병풀","마데카",
+           "앰플","세럼","에센스","토너","크림","마스크","패드","미스트"]
+    kw_rec = []
+    for _, row in data.iterrows():
+        nm = str(row["상품명"]).upper()
+        for kw in _KW:
+            if kw.upper() in nm:
+                kw_rec.append({"키워드": kw, metric: row[metric]})
+    if kw_rec:
+        kwa = pd.DataFrame(kw_rec).groupby("키워드")[metric].sum().sort_values(ascending=False).head(10)
+        _add_bar(slide, kwa.index.tolist(), kwa.values.tolist(), "제품명 키워드 매출 Top 10 (억원)",
+                 Emu(300000), Emu(1100000), Emu(11500000), Emu(5200000))
 
+    # 마지막: 엔딩
+    if end_layout:
+        prs.slides.add_slide(end_layout)
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
 
 # ─── 사이드바 필터 ───
 st.sidebar.header("🔍 필터")
