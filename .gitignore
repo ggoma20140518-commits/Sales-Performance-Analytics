@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# 실제 매출 데이터 (기밀)
+26년*.xlsx
+*.pdf
+
+# 참고용 PPT (양식은 포함)
+pigment_dispense_automation_report*.pptx
+
+# 임시 파일
+logo.png
+logo_test.png
+스크린샷*.png
+예제_매출데이터.xlsx
+예제_매출데이터_v2.xlsx
+generate_sample.py
