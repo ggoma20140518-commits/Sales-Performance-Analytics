@@ -1097,9 +1097,89 @@ with tab0:
     st.subheader("실적 현황표")
     st.markdown(html, unsafe_allow_html=True)
 
-    # 엑셀 다운로드
+    # 다운로드
     export_df = display_pivot.reset_index()
-    _excel_download(export_df, "실적현황표", "dl_report_table")
+    col_dl1, col_dl2 = st.columns(2)
+    with col_dl1:
+        _excel_download(export_df, "실적현황표", "dl_report_table")
+    with col_dl2:
+        def _gen_report_ppt():
+            _prs = Presentation()
+            _prs.slide_width = Emu(12192000)
+            _prs.slide_height = Emu(6858000)
+            _sl = _prs.slides.add_slide(_prs.slide_layouts[6])
+            _sl.background.fill.solid()
+            _sl.background.fill.fore_color.rgb = RGBColor(255,255,255)
+            _tx = _sl.shapes.add_textbox(Emu(300000), Emu(200000), Emu(8000000), Emu(450000))
+            _p = _tx.text_frame.paragraphs[0]
+            _p.text = f"실적 현황표 ({report_view})"
+            _p.font.size = Pt(24)
+            _p.font.bold = True
+            _p.font.color.rgb = RGBColor(17,24,39)
+            _ms = sorted(filtered["년월"].unique())
+            _pv = filtered.pivot_table(index=group_col, columns="년월", values=metric, aggfunc="sum").fillna(0)
+            _pv = _pv.reindex(columns=_ms, fill_value=0)
+            _pv["누적"] = _pv.sum(axis=1)
+            _pv["제품수"] = filtered.groupby(group_col)["상품코드"].nunique()
+            _pv = _pv.sort_values("누적", ascending=False).head(top_n)
+            _gt = _pv["누적"].sum()
+            nmc = len(_ms) + max(0, (len(_ms)-1)*2)
+            nc = 1 + nmc + 4
+            nr = 2 + 1 + len(_pv)
+            ts = _sl.shapes.add_table(nr, nc, Emu(150000), Emu(750000), Emu(11900000), Emu(min(nr*280000,5800000)))
+            t = ts.table
+            H=RGBColor(17,24,39); T=RGBColor(31,41,55); R=RGBColor(230,30,61); B=RGBColor(37,99,235)
+            D=RGBColor(17,24,39); W=RGBColor(255,255,255); S=RGBColor(243,244,246)
+            def _c(r,c,tx,b=False,bg=None,fg=None,sz=8):
+                cl=t.cell(r,c); cl.text=str(tx)
+                for p in cl.text_frame.paragraphs:
+                    p.font.size=Pt(sz); p.font.bold=b; p.alignment=PP_ALIGN.CENTER
+                    if fg: p.font.color.rgb=fg
+                if bg: cl.fill.solid(); cl.fill.fore_color.rgb=bg
+            _c(0,0,"분류",True,H,W,9)
+            try: t.cell(0,0).merge(t.cell(1,0))
+            except: pass
+            ci=1
+            for i,m in enumerate(_ms):
+                if i==0: _c(0,ci,m,True,H,W,9); ci+=1
+                else:
+                    try: t.cell(0,ci).merge(t.cell(0,ci+2))
+                    except: pass
+                    _c(0,ci,m,True,H,W,9); ci+=3
+            try: t.cell(0,ci).merge(t.cell(0,ci+2))
+            except: pass
+            _c(0,ci,"누적",True,H,W,9)
+            _c(0,nc-1,"제품수",True,H,W,9)
+            try: t.cell(0,nc-1).merge(t.cell(1,nc-1))
+            except: pass
+            ci=1
+            for i,m in enumerate(_ms):
+                _c(1,ci,metric,True,H,W,7); ci+=1
+                if i>0: _c(1,ci,"증감",True,H,W,7); _c(1,ci+1,"성장률",True,H,W,7); ci+=2
+            _c(1,ci,metric,True,H,W,7); _c(1,ci+1,"비중",True,H,W,7); _c(1,ci+2,"순위",True,H,W,7)
+            def _r(ri,nm,mv,cum,sh,rk,pc,tot=False):
+                bg=T if tot else (S if ri%2==0 else None); fg=W if tot else D
+                _c(ri,0,nm,True,bg,fg,9); ci=1
+                for i,m in enumerate(_ms):
+                    v=mv.get(m,0); _c(ri,ci,f"{v/1e8:,.1f}억",tot,bg,fg,8); ci+=1
+                    if i>0:
+                        pv=mv.get(_ms[i-1],0); d=v-pv; rt=(d/pv*100) if pv else 0; a="▲" if d>=0 else "▼"
+                        cl=(RGBColor(252,165,165) if d>=0 else RGBColor(147,197,253)) if tot else (R if d>=0 else B)
+                        _c(ri,ci,f"{a} {abs(d)/1e8:,.1f}억",True,bg,cl,8); _c(ri,ci+1,f"{a} {abs(rt):.1f}%",True,bg,cl,8); ci+=2
+                _c(ri,ci,f"{cum/1e8:,.1f}억",True,bg,fg,8); _c(ri,ci+1,f"{sh:.1f}%",False,bg,fg,8)
+                _c(ri,ci+2,str(rk),True,bg,fg,8); _c(ri,nc-1,str(pc),False,bg,fg,8)
+            tv={m:filtered[filtered["년월"]==m][metric].sum() for m in _ms}
+            _r(2,"총합계",tv,_gt,100.0,"-",filtered["상품코드"].nunique(),True)
+            for rk,(nm,rw) in enumerate(_pv.iterrows(),1):
+                _r(3+rk-1,nm,{m:rw[m] for m in _ms},rw["누적"],(rw["누적"]/_gt*100) if _gt else 0,rk,int(rw["제품수"]))
+            buf=io.BytesIO(); _prs.save(buf); buf.seek(0); return buf.getvalue()
+
+        if st.button("📥 실적 현황표 PPT", key="dl_rpt_pptx"):
+            ppt_data = _gen_report_ppt()
+            st.download_button("💾 PPT 저장", data=ppt_data,
+                file_name=f"실적현황표_{report_view}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                key="dl_rpt_pptx_f")
 
 # ============================================================
 # 탭1: 고객사 분석
