@@ -1,0 +1,51 @@
+========================================
+  Streamlit Community Cloud 배포 가이드
+========================================
+
+[1] 배포에 필요한 파일
+----------------------------------------
+프로젝트 폴더/
+  ├── app.py                          → 메인 앱
+  ├── requirements.txt                → Python 패키지
+  ├── packages.txt                    → Linux apt 패키지 (한글 폰트)
+  ├── .streamlit/
+  │   └── config.toml                 → Streamlit 설정 (테마 등)
+  ├── .gitignore                      → Git 제외 파일
+  ├── 2026년 사업계획 양식.pptx          → PPT 템플릿 (선택)
+  ├── 예제_매출데이터_v3.xlsx            → 예제 파일
+  └── logo_transparent.png            → 로고 (사용 시)
+
+
+[2] GitHub 저장소 생성
+----------------------------------------
+1. GitHub(https://github.com)에서 새 저장소(Repository) 생성
+2. 위 파일들을 업로드 (실제 매출 데이터는 업로드 금지!)
+
+Git 명령어 (터미널):
+
+  cd "프로젝트 폴더 경로"
+  git init
+  git add app.py requirements.txt packages.txt .streamlit/config.toml .gitignore
+  git add "2026년 사업계획 양식.pptx" "예제_매출데이터_v3.xlsx" logo_transparent.png
+  git commit -m "COSMAX R&I 매출분석 대시보드"
+  git remote add origin https://github.com/본인계정/저장소이름.git
+  git branch -M main
+  git push -u origin main
+
+
+[3] Streamlit Cloud 배포
+----------------------------------------
+1. https://share.streamlit.io 접속
+2. GitHub 계정 연결
+3. "New app" 클릭
+4. 저장소, 브랜치(main), 파일(app.py) 선택
+5. "Deploy" 클릭
+6. 약 2-3분 후 배포 완료
+
+
+[4] 주의사항
+----------------------------------------
+- 실제 매출 데이터는 GitHub에 올리지 마세요 (.gitignore에 설정됨)
+- 배포 후 브라우저에서 엑셀 파일을 업로드하여 사용합니다
+- PPT 양식 파일이 없으면 기본 레이아웃으로 PPT 생성됩니다
+- 무료 플랜: 앱 1개, 1GB RAM
