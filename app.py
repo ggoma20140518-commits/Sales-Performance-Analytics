@@ -256,16 +256,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ─── 파일 업로드 ───
-uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요", type=["xlsx", "xls"])
-if uploaded_file is None:
-    st.info("엑셀 파일을 업로드하면 분석이 시작됩니다.")
+uploaded_files = st.file_uploader("엑셀 파일을 업로드하세요 (복수 파일 가능)", type=["xlsx", "xls"], accept_multiple_files=True)
+if not uploaded_files:
+    st.info("엑셀 파일을 업로드하면 분석이 시작됩니다. 여러 파일을 올리면 합산 비교 분석됩니다.")
     st.stop()
 
 # ─── 데이터 로드 ───
-@st.cache_data
-def load_data(file):
-    xls = pd.ExcelFile(file)
-    frames = []
+def load_data(files):
+    all_frames = []
+    for file in files:
+        xls = pd.ExcelFile(file)
+        _load_sheets(xls, all_frames)
+    data = pd.concat(all_frames, ignore_index=True)
+    return _preprocess(data)
+
+
+def _load_sheets(xls, frames):
     skip_keywords = ["요약", "작성", "주의", "매핑", "guide", "note"]
     for sheet in xls.sheet_names:
         if any(kw in sheet for kw in skip_keywords):
@@ -275,9 +281,12 @@ def load_data(file):
         if "년도" not in df.columns or "월" not in df.columns:
             continue
         frames.append(df)
-    data = pd.concat(frames, ignore_index=True)
 
-    # 기본 전처리
+
+def _preprocess(data):
+    # 기본 전처리 - "2025년" → 2025, "01" → 1 등 문자열 대응
+    data["년도"] = data["년도"].astype(str).str.extract(r"(\d+)")[0]
+    data["월"] = data["월"].astype(str).str.extract(r"(\d+)")[0]
     data["년도"] = pd.to_numeric(data["년도"], errors="coerce")
     data["월"] = pd.to_numeric(data["월"], errors="coerce")
     data = data.dropna(subset=["년도", "월"]).copy()
@@ -290,8 +299,8 @@ def load_data(file):
     # 고객사 코드 추출 (상품코드 2~4번째 글자)
     data["고객코드"] = data["상품코드"].astype(str).str[1:4]
 
-    # 고객사명 추출: 상품명에서 브랜드 부분 추출
-    data["고객사명"] = data["상품코드"].astype(str).str[1:4]  # 기본값
+    # 고객사명 추출
+    data["고객사명"] = data["상품코드"].astype(str).str[1:4]
     data = _map_customer_names(data)
 
     return data
@@ -390,13 +399,129 @@ def _extract_brand(product_name, code):
         "FNF": "MLB(에프앤에프)",
         "SNG": "파뮤",
         "HMS": "한미사이언스",
+        # 25년 데이터 추가 매핑
+        "LNC": "스킨앤랩(랩앤컴퍼니)",
+        "JLC": "더마픽스(제이엘씨)",
+        "RLA": "프로벡틴",
+        "RLK": "라엘뷰티",
+        "FBO": "매스틱(프롬바이오)",
+        "DRD": "닥터디퍼런트",
+        "HLO": "주미소(헬로스킨)",
+        "EBE": "필리브(에비에)",
+        "CSL": "셀퓨전씨",
+        "IHS": "닥터로사(인핸스비)",
+        "EDA": "메디필(스킨이데아)",
+        "VEM": "듀이셀",
+        "CCI": "그린그라운드",
+        "CHB": "세러데이(차바이오)",
+        "COS": "코스맥스",
+        "BDS": "부드와서울",
+        "BDT": "코이(브랜드홀더)",
+        "BEY": "언커버미(라비브)",
+        "BFR": "비팩토리",
+        "BPT": "비플랜트",
+        "BTK": "벤텍",
+        "CAH": "천비밀리(창희)",
+        "CAX": "코스알엑스",
+        "CCB": "코코엔비",
+        "CLN": "바이오홈솔루션",
+        "CMT": "그린슈타인",
+        "CRR": "크레르",
+        "CSB": "바이오던스",
+        "DEC": "비담은(시드니)",
+        "DLS": "크레모랩",
+        "DPL": "닥터엘시아",
+        "DTL": "닥터엘시아",
+        "EFC": "이펙트(정진호)",
+        "ERK": "에런케이",
+        "FCL": "아로셀(에프아이씨씨)",
+        "GEN": "닥터지(고운세상)",
+        "HAN": "한스파마",
+        "HBL": "리바이브(현대바이오)",
+        "HJP": "휴젤(웰라쥬)",
+        "HRM": "하루미",
+        "HUX": "헉슬리",
+        "IDH": "아이디플라코스메틱",
+        "IDP": "일동제약",
+        "INC": "익큰맨",
+        "IYE": "인요에",
+        "JAY": "루피움(제이윤)",
+        "KET": "트루드림(키스인터)",
+        "KIE": "카이네",
+        "KIR": "카일라니",
+        "KIS": "키스뉴욕",
+        "KPE": "셀라듀(케이프)",
+        "KWY": "케이웨이",
+        "LAB": "레이어랩",
+        "LTK": "엘투코리아",
+        "MAM": "휴메딕스",
+        "MDC": "메디페어",
+        "MDD": "퀸홀리데이(명동)",
+        "MDR": "모델로더마",
+        "MEM": "미미박스",
+        "MGF": "메이크프렘",
+        "MIC": "메사니",
+        "MLU": "멜라루카",
+        "MNL": "에르보리앙",
+        "MNT": "매나테크",
+        "MPP": "메디페어",
+        "MSA": "무신사",
+        "NDA": "LOK",
+        "NOP": "네오팜",
+        "NRI": "네오라",
+        "OFS": "샬랑드(오퍼스)",
+        "OPD": "원폴드",
+        "PRR": "프로랑스",
+        "QKS": "일리블",
+        "REB": "리파이",
+        "RHN": "프리티(알에이치앤)",
+        "RJA": "닥터리쥬란",
+        "RSE": "십장생(로제)",
+        "RSP": "펩타이드(리에스피)",
+        "RTH": "비타에이징(베리홉)",
+        "SAM": "더샘",
+        "SBM": "셀프뷰티",
+        "SIG": "블랑뮤즈",
+        "SKM": "스킨엠디",
+        "SKT": "스킨콜렉티브",
+        "SME": "라곰(스킨메드)",
+        "SNG": "파뮤",
+        "SYS": "스탠다드서울",
+        "TIR": "티르티르",
+        "TNM": "토니모리",
+        "TRD": "토리든",
+        "VAN": "반다",
+        "VIB": "루미덤(바이비)",
+        "VKB": "비코빅",
+        "WNZ": "우앤주디어",
+        "YAD": "야다",
+        "YHD": "유한킴벌리(그린핑거)",
+        "ZNC": "유이크(지놈앤컴퍼니)",
+        "ZRN": "프레비츠",
+        "PUR": "퍼셀",
+        "DNE": "닥터나인틴",
+        "KRT": "가히(코리아테크)",
+        "DAP": "동아제약(파티온)",
+        "WSN": "왓슨즈",
+        "EMT": "이마트",
+        "DEF": "디마프",
+        "SDA": "NARS",
+        "NTG": "뉴트로지나",
+        "MKT": "성분에디터(올리브인터)",
+        "JGD": "종근당건강(CKD)",
+        "ORC": "닥터오라클",
+        "MEB": "미백뷰티",
+        "ANG": "앙티브",
+        "BEK": "클라뷰(베케이)",
+        "KSC": "케이시크릿",
+        "FBO": "매스틱(프롬바이오)",
     }
     if code in known_brands:
         return known_brands[code]
     return code
 
 
-df = load_data(uploaded_file)
+df = load_data(uploaded_files)
 
 
 # ─── PPT 보고서 생성 ───
@@ -817,7 +942,13 @@ quarter_options = ["전체"] + sorted(df["분기"].unique().tolist())
 selected_quarter = st.sidebar.selectbox("분기", quarter_options)
 
 # 월 필터 (멀티셀렉트)
-all_months = sorted(df["년월"].unique().tolist())
+# 년도/분기 필터 적용 후 월 목록 생성
+_pre_filtered = df.copy()
+if selected_year != "전체":
+    _pre_filtered = _pre_filtered[_pre_filtered["년도"] == int(selected_year)]
+if selected_quarter != "전체":
+    _pre_filtered = _pre_filtered[_pre_filtered["분기"] == selected_quarter]
+all_months = sorted(_pre_filtered["년월"].unique().tolist())
 selected_months = st.sidebar.multiselect("월 (복수 선택 가능)", all_months, default=all_months)
 
 # Team 필터
@@ -841,7 +972,8 @@ if selected_quarter != "전체":
 if selected_months:
     filtered = filtered[filtered["년월"].isin(selected_months)]
 else:
-    filtered = filtered[filtered["년월"].isin(all_months)]
+    st.warning("월을 최소 1개 이상 선택해주세요.")
+    st.stop()
 if selected_team != "전체":
     filtered = filtered[filtered["Team"] == selected_team]
 
@@ -926,9 +1058,20 @@ def _excel_download(dataframe, filename, key):
     )
 
 # ─── 탭 구성 ───
-tab0, tab1, tab2, tab3, tab5, tab7, tab6, tab4, tab_help = st.tabs(
-    ["📊 실적 현황표", "🏢 고객사 분석", "📦 품목(유형) 분석", "🌏 국내/해외 분석", "👤 담당자 분석", "🔑 키워드 분석", "🔍 인터랙티브 분석", "📋 상세 데이터", "📖 작성 방법"]
-)
+_years = sorted(df["년도"].unique())
+_has_multi_year = len(_years) > 1
+
+_tab_names = ["📊 실적 현황표", "🏢 고객사 분석", "📦 품목(유형) 분석", "🌏 국내/해외 분석", "👤 담당자 분석", "🔑 키워드 분석", "🔍 인터랙티브 분석", "📋 상세 데이터", "📖 작성 방법"]
+if _has_multi_year:
+    _tab_names.insert(1, "📈 년도별 비교")
+
+_tabs = st.tabs(_tab_names)
+
+if _has_multi_year:
+    tab0, tab_yoy, tab1, tab2, tab3, tab5, tab7, tab6, tab4, tab_help = _tabs
+else:
+    tab0, tab1, tab2, tab3, tab5, tab7, tab6, tab4, tab_help = _tabs
+    tab_yoy = None
 
 # ============================================================
 # 탭0: 실적 현황표
@@ -969,8 +1112,9 @@ with tab0:
     }
     group_col = view_col_map[report_view]
 
-    # 월별 데이터 피벗
-    monthly_pivot = df.pivot_table(
+    # 월별 데이터 피벗 (필터 적용된 데이터 사용)
+    months_sorted = sorted(filtered["년월"].unique())
+    monthly_pivot = filtered.pivot_table(
         index=group_col, columns="년월", values=metric, aggfunc="sum"
     ).fillna(0)
     monthly_pivot = monthly_pivot.reindex(columns=months_sorted, fill_value=0)
@@ -979,7 +1123,7 @@ with tab0:
     monthly_pivot["누적합계"] = monthly_pivot.sum(axis=1)
 
     # 제품수
-    prod_count = df.groupby(group_col)["상품코드"].nunique()
+    prod_count = filtered.groupby(group_col)["상품코드"].nunique()
     monthly_pivot["제품수"] = prod_count
 
     # 정렬
@@ -1199,6 +1343,94 @@ with tab0:
                 key="dl_rpt_pptx_f")
 
 # ============================================================
+# 탭 년도별 비교 (2개 이상 년도일 때만)
+# ============================================================
+if _has_multi_year and tab_yoy is not None:
+    with tab_yoy:
+        st.subheader("년도별 매출 비교 분석")
+        st.caption(f"데이터에 포함된 년도: {', '.join(str(y) for y in _years)}")
+
+        # 년도별 총 매출 비교
+        yoy_total = filtered.groupby("년도")[metric].sum().reset_index()
+        fig_yoy1 = px.bar(yoy_total, x="년도", y=metric, text_auto=".3s",
+                          color="년도", color_discrete_sequence=PI_COLORS)
+        _pi_layout(fig_yoy1, height=400, title_text="년도별 총 매출 비교")
+        fig_yoy1.update_traces(textposition="outside")
+        fig_yoy1.update_xaxes(type="category")
+        st.plotly_chart(fig_yoy1, use_container_width=True)
+
+        st.divider()
+
+        # 년도별 월별 매출 추이 비교
+        st.subheader("년도별 월별 매출 추이 비교")
+        yoy_monthly = filtered.groupby(["년도", "월"])[metric].sum().reset_index()
+        yoy_monthly["년도"] = yoy_monthly["년도"].astype(str)
+        yoy_monthly["월"] = yoy_monthly["월"].astype(str) + "월"
+        fig_yoy2 = px.line(yoy_monthly, x="월", y=metric, color="년도",
+                           markers=True, color_discrete_sequence=PI_COLORS)
+        _pi_layout(fig_yoy2, height=450)
+        st.plotly_chart(fig_yoy2, use_container_width=True)
+        _excel_download(yoy_monthly, "년도별_월별추이", "dl_yoy_monthly")
+
+        st.divider()
+
+        # 년도별 고객사 Top 10 비교
+        st.subheader("년도별 고객사 매출 Top 10 비교")
+        yoy_cust = filtered.groupby(["년도", "고객사명"])[metric].sum().reset_index()
+        top_cust_yoy = filtered.groupby("고객사명")[metric].sum().sort_values(ascending=False).head(top_n).index
+        yoy_cust_top = yoy_cust[yoy_cust["고객사명"].isin(top_cust_yoy)]
+        yoy_cust_top["년도"] = yoy_cust_top["년도"].astype(str)
+        fig_yoy3 = px.bar(yoy_cust_top, x="고객사명", y=metric, color="년도",
+                          barmode="group", text_auto=".3s", color_discrete_sequence=PI_COLORS)
+        _pi_layout(fig_yoy3, height=500, xaxis_tickangle=-45)
+        st.plotly_chart(fig_yoy3, use_container_width=True)
+        _excel_download(yoy_cust_top, "년도별_고객사비교", "dl_yoy_cust")
+
+        st.divider()
+
+        # 년도별 증감 상세 테이블
+        st.subheader("년도별 증감 상세")
+        if len(_years) >= 2:
+            y_prev, y_curr = _years[-2], _years[-1]
+            prev_data = filtered[filtered["년도"] == y_prev].groupby("고객사명")[metric].sum()
+            curr_data = filtered[filtered["년도"] == y_curr].groupby("고객사명")[metric].sum()
+            compare = pd.DataFrame({"전년": prev_data, "당년": curr_data}).fillna(0)
+            compare["증감액"] = compare["당년"] - compare["전년"]
+            compare["성장률(%)"] = ((compare["증감액"] / compare["전년"].replace(0, float("nan"))) * 100).round(1)
+            compare = compare.sort_values("당년", ascending=False).head(top_n)
+            compare["전년"] = compare["전년"].apply(lambda x: f"{x/1e8:,.1f}억")
+            compare["당년"] = compare["당년"].apply(lambda x: f"{x/1e8:,.1f}억")
+            compare["증감"] = compare["증감액"].apply(
+                lambda x: f"▲ {abs(x)/1e8:,.1f}억" if x >= 0 else f"▼ {abs(x)/1e8:,.1f}억")
+            compare["성장률"] = compare["성장률(%)"].apply(
+                lambda x: f"▲ {x:.1f}%" if x >= 0 else f"▼ {abs(x):.1f}%" if pd.notna(x) else "-")
+            st.markdown(f"**{y_prev}년 vs {y_curr}년 고객사별 비교**")
+            st.dataframe(compare[["전년", "당년", "증감", "성장률"]].reset_index(),
+                         use_container_width=True, height=500)
+            _excel_download(compare.reset_index(), f"{y_prev}vs{y_curr}_비교", "dl_yoy_compare")
+
+        st.divider()
+
+        # 년도별 유형 비교
+        st.subheader("년도별 중유형 매출 비교")
+        yoy_type = filtered.groupby(["년도", "중유형"])[metric].sum().reset_index()
+        yoy_type["년도"] = yoy_type["년도"].astype(str)
+        fig_yoy4 = px.bar(yoy_type, x="중유형", y=metric, color="년도",
+                          barmode="group", text_auto=".3s", color_discrete_sequence=PI_COLORS)
+        _pi_layout(fig_yoy4, height=400, xaxis_tickangle=-45)
+        st.plotly_chart(fig_yoy4, use_container_width=True)
+
+        # 년도별 국내/해외 비교
+        st.subheader("년도별 국내/해외 매출 비교")
+        yoy_region = filtered.groupby(["년도", "국내/해외"])[metric].sum().reset_index()
+        yoy_region["년도"] = yoy_region["년도"].astype(str)
+        fig_yoy5 = px.bar(yoy_region, x="년도", y=metric, color="국내/해외",
+                          barmode="group", text_auto=".3s",
+                          color_discrete_map={"국내": "#1F2937", "해외": "#E61E3D"})
+        _pi_layout(fig_yoy5, height=400)
+        st.plotly_chart(fig_yoy5, use_container_width=True)
+
+# ============================================================
 # 탭1: 고객사 분석
 # ============================================================
 with tab1:
@@ -1296,7 +1528,7 @@ with tab2:
             filtered.groupby("소유형")[metric]
             .sum()
             .sort_values(ascending=False)
-            .head(15)
+            .head(top_n)
             .reset_index()
         )
         fig4 = px.bar(
@@ -1331,7 +1563,7 @@ with tab2:
 
     st.subheader("소유형별 월별 매출 추이")
     top_subtypes = (
-        filtered.groupby("소유형")[metric].sum().sort_values(ascending=False).head(8).index
+        filtered.groupby("소유형")[metric].sum().sort_values(ascending=False).head(top_n).index
     )
     subtype_monthly = (
         filtered[filtered["소유형"].isin(top_subtypes)]
@@ -1519,7 +1751,7 @@ with tab5:
         filtered.groupby("현담당자")[metric]
         .sum()
         .sort_values(ascending=False)
-        .head(10)
+        .head(top_n)
         .index
     )
     mgr_monthly = (
@@ -1631,7 +1863,7 @@ with tab7:
         # ── 1) 전체 키워드 Top 10 ──
         kw_rank = kw_df.groupby("키워드").agg(
             매출합계=(metric, "sum"), 제품수=("상품코드", "nunique")
-        ).sort_values("매출합계", ascending=False).head(10).reset_index()
+        ).sort_values("매출합계", ascending=False).head(top_n).reset_index()
 
         col_k1, col_k2 = st.columns(2)
         with col_k1:
